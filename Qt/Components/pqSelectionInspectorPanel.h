@@ -169,7 +169,7 @@ protected:
   void setupFrustumSelectionGUI();
 
   void setupThresholdSelectionGUI();
-  void updateThreholdDataArrays();
+  void updateThresholdDataArrays();
 
   /// Create a new selection source for the current output port if
   /// * no selection source present
@@ -193,6 +193,10 @@ protected:
 
   void selectGlobalIdsIfPossible(pqOutputPort* opport, bool forceGlobalIds, bool createNew);
   void setGlobalIDs();
+
+  void setupSpreadsheet();
+  void freeSpreadsheetProxy();
+  void updateSpreadsheetView();
 private:
   struct pqImplementation;
   pqImplementation* const Implementation;

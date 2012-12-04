@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>460</width>
-    <height>934</height>
+    <height>1194</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -742,6 +742,43 @@
          </widget>
         </item>
        </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="pqCollapsedGroup" name="groupBox">
+     <property name="title">
+      <string>Selected entities</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_2">
+      <property name="margin">
+       <number>3</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="pqSpreadSheetViewWidget" name="spreadsheet">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>120</height>
+         </size>
+        </property>
+        <property name="editTriggers">
+         <set>QAbstractItemView::NoEditTriggers</set>
+        </property>
+        <property name="alternatingRowColors">
+         <bool>true</bool>
+        </property>
+        <property name="selectionMode">
+         <enum>QAbstractItemView::NoSelection</enum>
+        </property>
+       </widget>
       </item>
      </layout>
     </widget>
@@ -1605,6 +1642,11 @@
    <class>pqOutputPortComboBox</class>
    <extends>QComboBox</extends>
    <header>pqOutputPortComboBox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>pqSpreadSheetViewWidget</class>
+   <extends>QTableView</extends>
+   <header>pqSpreadSheetViewWidget.h</header>
   </customwidget>
  </customwidgets>
  <tabstops>

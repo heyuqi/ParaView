@@ -32,6 +32,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pqSelectionInspectorPanel.h"
 #include "ui_pqSelectionInspectorPanel.h"
 
+#include "vtkDataObject.h"
 #include "vtkEventQtSlotConnect.h"
 #include "vtkProcessModule.h"
 #include "vtkPVArrayInformation.h"
@@ -81,6 +82,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pqSignalAdaptorCompositeTreeWidget.h"
 #include "pqSignalAdaptors.h"
 #include "pqSignalAdaptorTreeWidget.h"
+#include "pqSpreadsheetViewModel.h"
 #include "pqSMAdaptor.h"
 #include "pqTreeWidgetSelectionHelper.h"
 
@@ -247,6 +249,9 @@ public:
 
   QList<vtkSmartPointer<vtkSMNewWidgetRepresentationProxy> > LocationWigets;
   vtkSmartPointer<vtkSMProxy> FrustumWidget;
+  pqSpreadSheetViewModel* SpreadsheetModel;
+  vtkSmartPointer<vtkSMViewProxy> SpreadsheetViewProxy;
+  vtkSmartPointer<vtkSMProxy> SpreadsheetRepresentationProxy;
 
   enum
     {
@@ -336,6 +341,7 @@ pqSelectionInspectorPanel::pqSelectionInspectorPanel(QWidget* p) :
 //-----------------------------------------------------------------------------
 pqSelectionInspectorPanel::~pqSelectionInspectorPanel()
 {
+  this->freeSpreadsheetProxy();
   delete this->Implementation;
 }
 
@@ -498,7 +504,7 @@ void pqSelectionInspectorPanel::select(pqOutputPort* opport, bool createNew)
     }
 
   // TODO: This needs to be changed to use domains where-ever possible.
-  this->updateThreholdDataArrays();
+  this->updateThresholdDataArrays();
 
   this->Implementation->UpdatingGUI = false;
 
@@ -506,11 +512,14 @@ void pqSelectionInspectorPanel::select(pqOutputPort* opport, bool createNew)
     {
     this->Implementation->SelectionManager->select(opport);
     }
+  this->updateSpreadsheetView();
 }
 
 //-----------------------------------------------------------------------------
 void pqSelectionInspectorPanel::updateSelectionGUI()
 {
+  this->freeSpreadsheetProxy();
+
   // break all links between the GUI and the selection source proxy.
   this->Implementation->SelectionLinks->removeAllPropertyLinks();
   this->Implementation->Indices->clear();
@@ -700,6 +709,7 @@ void pqSelectionInspectorPanel::updateSelectionGUI()
       SIGNAL(textChanged()),
       selSource, selSource->GetProperty("UserFriendlyText"));
     }
+  this->setupSpreadsheet();
 }
 
 //-----------------------------------------------------------------------------
@@ -881,7 +891,7 @@ void pqSelectionInspectorPanel::updateDisplayStyleGUI()
 }
 
 //-----------------------------------------------------------------------------
-void pqSelectionInspectorPanel::updateThreholdDataArrays()
+void pqSelectionInspectorPanel::updateThresholdDataArrays()
 {
   this->Implementation->ThresholdScalarArray->clear();
   if (!this->Implementation->InputPort)
@@ -914,6 +924,7 @@ void pqSelectionInspectorPanel::updateThreholdDataArrays()
       }
     }
 }
+
 //-----------------------------------------------------------------------------
 void pqSelectionInspectorPanel::setupSelectionLabelGUI()
 {
@@ -1355,6 +1366,7 @@ void pqSelectionInspectorPanel::updateRepresentationViews()
   if (repr)
     {
     repr->renderView(false);
+    this->updateSpreadsheetView();
     }
 }
 
@@ -1365,6 +1377,7 @@ void pqSelectionInspectorPanel::updateAllSelectionViews()
   if (port)
     {
     port->renderAllViews();
+    this->updateSpreadsheetView();
     }
 }
 
@@ -1418,6 +1431,7 @@ void pqSelectionInspectorPanel::onSelectionTypeChanged(const QString&)
   if (this->Implementation->InputPort)
     {
     this->Implementation->InputPort->renderAllViews();
+    this->updateSpreadsheetView();
     }
 }
 
@@ -1445,7 +1459,9 @@ void pqSelectionInspectorPanel::createSelectionForCurrentObject()
     }
 
   this->selectGlobalIdsIfPossible(port,true,true);
+  this->setupSpreadsheet();
   port->renderAllViews();
+  this->updateSpreadsheetView();
 }
 
 //-----------------------------------------------------------------------------
@@ -1534,7 +1550,7 @@ void pqSelectionInspectorPanel::createNewSelectionSourceIfNeeded()
          selectedInformation->GetNumberOfCells() > 10000))
         {
         if (QMessageBox::warning(this, tr("Convert Selection"),
-            tr("This selection converion can potentially result in fetching a "
+            tr("Converting this selection could potentially gather a "
               "large amount of data to the client.\n"
               "Are you sure you want to continue?"),
             QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Cancel) !=
@@ -1557,6 +1573,7 @@ void pqSelectionInspectorPanel::createNewSelectionSourceIfNeeded()
     if (selSource != curSelSource)
       {
       selSource->UpdateVTKObjects();
+      this->setupSpreadsheet();
       port->setSelectionInput(selSource, 0);
       }
 
@@ -1827,6 +1844,7 @@ void pqSelectionInspectorPanel::updateSelectionTypesAvailable(pqOutputPort* port
   this->Implementation->comboSelectionType->blockSignals(prev);
 }
 
+//-----------------------------------------------------------------------------
 bool pqSelectionInspectorPanel::hasGlobalIDs(pqOutputPort* port)
 {
   if (!port)
@@ -1855,6 +1873,7 @@ void pqSelectionInspectorPanel::onSelectionColorChanged(const QColor& color)
   settings->setValue("GlobalProperties/SelectionColor", color);
 }
 
+//-----------------------------------------------------------------------------
 void pqSelectionInspectorPanel::setGlobalIDs()
 {
   this->Implementation->comboSelectionType->setCurrentIndex(
@@ -1902,6 +1921,7 @@ void pqSelectionInspectorPanel::setGlobalIDs()
     }
 }
 
+//-----------------------------------------------------------------------------
 void pqSelectionInspectorPanel::forceLabelGlobalId(vtkObject* object)
 {
   pqDataRepresentation* repr = this->Implementation->getSelectionRepresentation();
@@ -1937,4 +1957,103 @@ void pqSelectionInspectorPanel::forceLabelGlobalId(vtkObject* object)
       this, SLOT(forceLabelGlobalId(vtkObject*)));
     this->Implementation->PointLabelArrayDomain->removeString("GlobalNodeId");
     }
+}
+
+//-----------------------------------------------------------------------------
+void pqSelectionInspectorPanel::setupSpreadsheet()
+{
+  this->Implementation->spreadsheet->setModel(NULL);
+  pqOutputPort* port = this->Implementation->currentObject->currentPort();
+  if (
+    port == NULL ||
+    port->getSource()->getProxy()->GetObjectsCreated() != 1)
+    {
+    return;
+    }
+  vtkSMSessionProxyManager* pxm = port->getSource()->proxyManager();
+
+  vtkSMProxy* repr = pxm->NewProxy("representations", "SpreadSheetRepresentation");
+  // we always want to show all the blocks in the dataset, since we don't have a
+  // block chooser widget in this dialog.
+  vtkSMPropertyHelper(repr, "CompositeDataSetIndex").Set(0);
+  vtkSMPropertyHelper(repr, "Input").Set(
+      port->getSource()->getProxy(),
+      port->getPortNumber());
+  repr->UpdateVTKObjects();
+
+  vtkSMViewProxy* view = vtkSMViewProxy::SafeDownCast(
+    pxm->NewProxy("views", "SpreadSheetView"));
+  vtkSMPropertyHelper(view, "SelectionOnly").Set(1);
+  vtkSMPropertyHelper(view, "Representations").Set(repr);
+  vtkSMPropertyHelper(view, "ViewSize").Set(0, 1);
+  vtkSMPropertyHelper(view, "ViewSize").Set(1, 1);
+  view->UpdateVTKObjects();
+  view->StillRender();
+
+  this->Implementation->SpreadsheetViewProxy.TakeReference(view);
+  this->Implementation->SpreadsheetRepresentationProxy.TakeReference(repr);
+  this->Implementation->SpreadsheetModel = new pqSpreadSheetViewModel(view, this);
+  this->Implementation->SpreadsheetModel->setActiveRepresentationProxy(repr);
+  // We deliberately don't set the model on the view here. We do that
+  // after all updates have happened. This keeps any progress events from
+  // mixing with the paint events and causing random test failures on
+  // dashboards (FindDataDialog test).
+}
+
+//-----------------------------------------------------------------------------
+void pqSelectionInspectorPanel::freeSpreadsheetProxy()
+{
+  this->Implementation->SpreadsheetModel = NULL;
+  this->Implementation->SpreadsheetViewProxy = NULL;
+  this->Implementation->SpreadsheetRepresentationProxy = NULL;
+  this->Implementation->spreadsheet->setModel(NULL);
+}
+
+//-----------------------------------------------------------------------------
+void pqSelectionInspectorPanel::updateSpreadsheetView()
+{
+  // Update spreadsheet view
+  vtkSMProxy* repr = this->Implementation->SpreadsheetRepresentationProxy;
+  if (!repr)
+    {
+    return;
+    }
+  int fieldAssoc;
+  std::string comboField =
+    this->Implementation->comboFieldType->currentText().toStdString();
+  if (comboField == "CELL" ||
+    (comboField == "POINT" && this->Implementation->checkboxContainCell->isChecked()))
+    {
+    fieldAssoc = vtkDataObject::FIELD_ASSOCIATION_CELLS;
+    }
+  else if (comboField == "POINT")
+    {
+    fieldAssoc = vtkDataObject::FIELD_ASSOCIATION_POINTS;
+    }
+  else if (comboField == "VERTEX")
+    {
+    fieldAssoc = vtkDataObject::FIELD_ASSOCIATION_VERTICES;
+    }
+  else if (comboField == "EDGE")
+    {
+    fieldAssoc = vtkDataObject::FIELD_ASSOCIATION_EDGES;
+    }
+  else if (comboField == "ROW")
+    {
+    fieldAssoc = vtkDataObject::FIELD_ASSOCIATION_ROWS;
+    }
+  else // (comboField == "FIELD")
+    {
+    fieldAssoc = vtkDataObject::FIELD_ASSOCIATION_NONE;
+    }
+  // Pass the chosen attribute type to the spreasheet so we show cells or
+  // points etc. based on what was selected.
+  vtkSMPropertyHelper(repr, "FieldAssociation").Set(fieldAssoc);
+  repr->UpdateVTKObjects();
+  // this may cause progress events. These can result in paint-event for the table
+  // view which could prematurely start querying information from the model.
+  // To avoid that issue, we don't set the model on  the view until after this call.
+  this->Implementation->SpreadsheetViewProxy->StillRender();
+  // now set the model on the view.
+  this->Implementation->spreadsheet->setModel(this->Implementation->SpreadsheetModel);
 }
