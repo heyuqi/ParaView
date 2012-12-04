@@ -7,7 +7,7 @@
    All rights reserved.
 
    ParaView is a free software; you can redistribute it and/or modify it
-   under the terms of the ParaView license version 1.2. 
+   under the terms of the ParaView license version 1.2.
 
    See License_v1.2.txt for the full ParaView license.
    A copy of this license can be obtained by contacting
@@ -56,7 +56,7 @@ class PQCOMPONENTS_EXPORT pqSelectionInspectorPanel :
   public QWidget
 {
   Q_OBJECT
-  
+
 public:
   pqSelectionInspectorPanel(QWidget* parent);
   ~pqSelectionInspectorPanel();
@@ -77,7 +77,7 @@ protected slots:
   /// Called when the active selection changes. The panel we show the details of
   /// the selection source input going into the pqOutputPort passed as an
   /// argument. Typically, this is connected to the
-  /// pqSelectionManager::selectionChanged(pqOutputPort*) signal. 
+  /// pqSelectionManager::selectionChanged(pqOutputPort*) signal.
   void select(pqOutputPort* opport, bool createNew=false);
 
   /// Called when the "Selection Type" combo-box is changed.
@@ -108,7 +108,7 @@ protected slots:
   void deleteValue();
   void deleteAllValues();
 
-  /// Requests update on on the active view. 
+  /// Requests update on on the active view.
   void updateRepresentationViews();
 
   /// Reqeusts render in all views the selection is shown.
@@ -176,7 +176,7 @@ protected:
   /// * selection source type is not same as the "Selection Type" combo
   void createNewSelectionSourceIfNeeded();
 
-  /// This returns the content type given the "Selection Type". 
+  /// This returns the content type given the "Selection Type".
   int getContentType() const;
 
   void removeWidgetsFromView();
@@ -184,7 +184,7 @@ protected:
   void allocateWidgets(unsigned int numWidgets);
 
   void updateFrustumInternal(bool);
-  
+
   /// Called to update the types of selections available.
   void updateSelectionTypesAvailable(pqOutputPort* opport);
 

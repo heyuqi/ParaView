@@ -226,17 +226,17 @@ public:
   pqPropertyLinks* RepLinks;
 
   pqSignalAdaptorColor* SelectionColorAdaptor;
-  pqSignalAdaptorColor *PointColorAdaptor;
-  pqSignalAdaptorComboBox *PointFontFamilyAdaptor;
-  pqSignalAdaptorComboBox *PointLabelAlignmentAdaptor;
+  pqSignalAdaptorColor* PointColorAdaptor;
+  pqSignalAdaptorComboBox* PointFontFamilyAdaptor;
+  pqSignalAdaptorComboBox* PointLabelAlignmentAdaptor;
 
-  pqSignalAdaptorColor *CellColorAdaptor;
-  pqSignalAdaptorComboBox *CellFontFamilyAdaptor;
-  pqSignalAdaptorComboBox *CellLabelAlignmentAdaptor;
+  pqSignalAdaptorColor* CellColorAdaptor;
+  pqSignalAdaptorComboBox* CellFontFamilyAdaptor;
+  pqSignalAdaptorComboBox* CellLabelAlignmentAdaptor;
 
-  pqSignalAdaptorComboBox *FieldTypeAdaptor;
+  pqSignalAdaptorComboBox* FieldTypeAdaptor;
   pqSignalAdaptorTreeWidget* ThresholdsAdaptor;
-  pqSignalAdaptorComboBox *ThresholdScalarArrayAdaptor;
+  pqSignalAdaptorComboBox* ThresholdScalarArrayAdaptor;
   pqSignalAdaptorCompositeTreeWidget* CompositeTreeAdaptor;
 
   pqComboBoxDomain* PointLabelArrayDomain;
@@ -299,7 +299,7 @@ public:
 /////////////////////////////////////////////////////////////////////////////////
 // pqSelectionInspectorPanel
 
-pqSelectionInspectorPanel::pqSelectionInspectorPanel(QWidget *p) :
+pqSelectionInspectorPanel::pqSelectionInspectorPanel(QWidget* p) :
   QWidget(p),
   Implementation(new pqImplementation())
 {
