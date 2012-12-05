@@ -73,9 +73,6 @@ signals:
   void helpRequested();
 
 protected slots:
-  /// Must be triggered before server disconnect to release all SMProxy links
-  void freeSMProxy();
-
   /// Triggered when the data to process has changed
   void onSelectionChange(pqOutputPort*);
 
@@ -95,9 +92,6 @@ protected slots:
   /// Called when user click the "Run Query" button.
   void runQuery();
 
-  /// Called when user selects a label item.
-  void setLabel(int index);
-
   void onExtractSelection()
     {
     this->extractSelection();
@@ -108,16 +102,6 @@ protected slots:
     this->extractSelectionOverTime();
     this->accept();
     }
-
-protected:
-  /// populate the list of available labels.
-  void updateLabels();
-
-  /// link the label-color widget with the active label-color property.
-  void linkLabelColorWidget(vtkSMProxy*, const QString& propname);
-
-  /// creates the proxies needed for the spreadsheet view.
-  void setupSpreadSheet();
 
 private:
   Q_DISABLE_COPY(pqQueryDialog)
