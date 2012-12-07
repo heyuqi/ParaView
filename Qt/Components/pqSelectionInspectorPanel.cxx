@@ -383,6 +383,21 @@ void pqSelectionInspectorPanel::setupGUI()
 
   // Hide the tree for starters.
   this->Implementation->compositeTree->setVisible(false);
+
+  // Hook up the "extract selection" and "extract over time" buttons
+  QObject::connect(
+    this->Implementation->extractSelection, SIGNAL(clicked()),
+    this, SIGNAL(onExtractSelection()), Qt::QueuedConnection);
+  QObject::connect(
+    this->Implementation->extractOverTime, SIGNAL(clicked()),
+    this, SIGNAL(onExtractOverTime()), Qt::QueuedConnection);
+
+  // Fix bad layout on Mac OS X.
+  // Appears to be a Qt bug, similar to (but not)
+  // https://bugreports.qt-project.org/browse/QTBUG-13050.
+#ifdef Q_WS_MAC
+  this->Implementation->page_IDs->setStyleSheet("QPushButton { min-height: 25px; }");
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -502,6 +517,8 @@ void pqSelectionInspectorPanel::select(pqOutputPort* opport, bool createNew)
     QObject::connect(opport->getSource(), SIGNAL(dataUpdated(pqPipelineSource*)),
       this, SLOT(updateSelectionTypesAvailable()), Qt::QueuedConnection);
     }
+  this->Implementation->extractSelection->setEnabled(opport ? true : false);
+  this->Implementation->extractOverTime->setEnabled(opport ? true : false);
 
   // TODO: This needs to be changed to use domains where-ever possible.
   this->updateThresholdDataArrays();

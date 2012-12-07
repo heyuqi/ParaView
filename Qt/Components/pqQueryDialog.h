@@ -76,9 +76,6 @@ protected slots:
   /// Triggered when the data to process has changed
   void onSelectionChange(pqOutputPort*);
 
-  /// Triggerd when the active view has changed
-  void onActiveViewChanged(pqView*);
-
   /// Based on the data type produced by the producer, this will update the
   /// options in the selection type combo-box.
   void populateSelectionType();

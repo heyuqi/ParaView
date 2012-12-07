@@ -40,6 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pqOutputPortComboBox.h"
 #include "pqPipelineSource.h"
 #include "pqQueryClauseWidget.h"
+#include "pqSelectionInspectorPanel.h"
 #include "pqServer.h"
 #include "pqSignalAdaptors.h"
 #include "pqUndoStack.h"
@@ -112,11 +113,6 @@ pqQueryDialog::pqQueryDialog(
   QObject::connect(
     this->Internals->source, SIGNAL(currentIndexChanged(pqOutputPort*)),
     this, SLOT(onSelectionChange(pqOutputPort*)));
-
-  // Connect the view manager to the pqActiveView.
-  QObject::connect(&pqActiveView::instance(),
-    SIGNAL(changed(pqView*)),
-    this, SLOT(onActiveViewChanged(pqView*)));
 
   this->onSelectionChange(_producer);
 }
@@ -235,34 +231,22 @@ void pqQueryDialog::runQuery()
   this->Internals->extractSelectionOverTime->setEnabled(true);
 
   emit this->selected(this->Internals->source->currentPort());
-}
 
-//-----------------------------------------------------------------------------
-namespace
-{
-  void pqQueryDialogAddArrays(
-    QComboBox* combobox,
-    vtkPVDataSetAttributesInformation* attrInfo,
-    const QIcon& icon,
-    QVariant data)
+  // Hide this dialog:
+  this->accept();
+  // Bring up the selection inspector if it is not already visible:
+  if (qApp)
     {
-    for (int cc=0; cc < attrInfo->GetNumberOfArrays(); cc++)
+    foreach (QWidget* widg, qApp->topLevelWidgets())
       {
-      vtkPVArrayInformation* arrayInfo = attrInfo->GetArrayInformation(cc);
-      // important to mark partial array since that array may be totally missing
-      // from the selection ;).
-      if (arrayInfo->GetIsPartial())
+      foreach (pqSelectionInspectorPanel* inspector, widg->findChildren<pqSelectionInspectorPanel*>())
         {
-        combobox->addItem(icon,
-          QString ("%1 (partial)").arg(arrayInfo->GetName()), data);
-        }
-      else
-        {
-        combobox->addItem(icon, arrayInfo->GetName(), data);
+        inspector->parentWidget()->show();
+        return;
         }
       }
     }
-};
+}
 
 //-----------------------------------------------------------------------------
 void pqQueryDialog::onSelectionChange(pqOutputPort* newSelectedPort)
@@ -286,23 +270,4 @@ void pqQueryDialog::onSelectionChange(pqOutputPort* newSelectedPort)
       this->Internals->extractSelectionOverTime->show();
       }
     }
-}
-
-//-----------------------------------------------------------------------------
-void pqQueryDialog::onActiveViewChanged(pqView* view)
-{
-  if(this->Internals->source->currentPort() == NULL)
-    {
-    // We are in the disconnect case...
-    return;
-    }
-
-  pqDataRepresentation* repr =
-      this->Internals->source->currentPort()->getRepresentation(
-          pqActiveObjects::instance().activeView());
-  if (!repr)
-    {
-    return;
-    }
-  vtkSMProxy* reprProxy = repr->getProxy();
 }

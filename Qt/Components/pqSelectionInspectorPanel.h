@@ -64,6 +64,13 @@ public:
   /// Set the selection manager.
   void setSelectionManager(pqSelectionManager*);
 
+signals:
+  /// Called when the user clicks the "Extract Selection" button; see pqSelectionReaction.
+  void onExtractSelection();
+
+  /// Called when the user clicks the "Extract Over Time" button; see pqSelectionReaction.
+  void onExtractOverTime();
+
 public slots:
   /// Called when active server changes. We make the decision if process id
   /// needs to be shown for the server connection.
