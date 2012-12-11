@@ -36,7 +36,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pqFiltersMenuReaction.h"
 #include "pqHelpReaction.h"
 #include "pqPVApplicationCore.h"
-#include "pqQueryDialog.h"
 #include "pqSelectionManager.h"
 #include "pqServerManagerModel.h"
 #include "vtkPVConfig.h"
