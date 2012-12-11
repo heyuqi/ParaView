@@ -93,8 +93,10 @@ pqSelectionInspectorPanel* pqSelectionReaction::findInspector()
       QWidget* widg = qApp->topLevelWidgets().at(i);
       foreach (inspector, widg->findChildren<pqSelectionInspectorPanel*>())
         {
-        return inspector;
-        break;
+        if (inspector)
+          {
+          return inspector;
+          }
         }
       }
     }
