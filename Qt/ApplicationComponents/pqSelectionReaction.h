@@ -1,9 +1,9 @@
 /*=========================================================================
 
    Program: ParaView
-   Module:    pqDataQueryReaction.h
+   Module:    pqSelectionReaction.h
 
-   Copyright (c) 2005,2006 Sandia Corporation, Kitware Inc.
+   Copyright (c) 2005,2006,2012 Sandia Corporation, Kitware Inc.
    All rights reserved.
 
    ParaView is a free software; you can redistribute it and/or modify it
@@ -29,40 +29,47 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================*/
-#ifndef __pqDataQueryReaction_h
-#define __pqDataQueryReaction_h
+#ifndef __pqSelectionReaction_h
+#define __pqSelectionReaction_h
 
 #include "pqReaction.h"
 
+class pqSelectionInspectorPanel;
+
 /// @ingroup Reactions
-/// pqDataQueryReaction is the reaction that popups the Data Query Dialog
-/// allowing the user to 'search' his data.
-class PQAPPLICATIONCOMPONENTS_EXPORT pqDataQueryReaction : public pqReaction
+/// pqSelectionReaction is a reaction that pops up the selection inspector.
+/// Its main purpose, however, is to connect the selection inspector's signals
+/// requesting that the selection be extracted or plotted to the corresponding
+/// filters in ParaView's filter menu. This cannot be done easily in the
+/// pqSelectionInspectorPanel itself since the pqFiltersMenu reaction is in the
+/// pqApplicationComponents library which is dependent on the pqComponents
+/// library containing the selection inspector.
+class PQAPPLICATIONCOMPONENTS_EXPORT pqSelectionReaction : public pqReaction
 {
   Q_OBJECT
   typedef pqReaction Superclass;
 public:
   /// Constructor. Parent cannot be NULL.
-  pqDataQueryReaction(QAction* parent);
-  virtual ~pqDataQueryReaction();
+  pqSelectionReaction(QAction* parent);
+  virtual ~pqSelectionReaction();
 
   /// Show the query dialog for querying the data from the active source.
-  void showQueryDialog();
+  void showInspector();
 
 public slots:
   void onExtractSelection();
-  void onExtractSelectionOverTime();
-  void showHelp();
+  void onExtractOverTime();
 
 protected:
   /// Called when the action is triggered.
   virtual void onTriggered()
-    { pqDataQueryReaction::showQueryDialog(); }
+    { pqSelectionReaction::showInspector(); }
+
+  pqSelectionInspectorPanel* findInspector();
+  void connectInspector(pqSelectionInspectorPanel* ins);
 
 private:
-  Q_DISABLE_COPY(pqDataQueryReaction)
+  Q_DISABLE_COPY(pqSelectionReaction)
 };
 
 #endif
-
-

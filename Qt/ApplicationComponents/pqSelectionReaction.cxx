@@ -1,7 +1,7 @@
 /*=========================================================================
 
    Program: ParaView
-   Module:    pqDataQueryReaction.cxx
+   Module:    pqSelectionReaction.cxx
 
    Copyright (c) 2005,2006 Sandia Corporation, Kitware Inc.
    All rights reserved.
@@ -29,7 +29,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================*/
-#include "pqDataQueryReaction.h"
+#include "pqSelectionReaction.h"
 
 #include "pqActiveObjects.h"
 #include "pqCoreUtilities.h"
@@ -40,84 +40,77 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pqSelectionManager.h"
 #include "pqServerManagerModel.h"
 #include "vtkPVConfig.h"
+#include "pqSelectionInspectorPanel.h"
 
+#include <QApplication>
 #include <QEventLoop>
 #include <QMessageBox>
 
 //-----------------------------------------------------------------------------
-pqDataQueryReaction::pqDataQueryReaction(QAction* parentObject)
+pqSelectionReaction::pqSelectionReaction(QAction* parentObject)
   : Superclass(parentObject)
 {
+  pqSelectionInspectorPanel* inspector = this->findInspector();
+  this->connectInspector(inspector);
 }
 
 //-----------------------------------------------------------------------------
-pqDataQueryReaction::~pqDataQueryReaction()
+pqSelectionReaction::~pqSelectionReaction()
 {
 }
 
 //-----------------------------------------------------------------------------
-void pqDataQueryReaction::onExtractSelection()
+void pqSelectionReaction::onExtractSelection()
 {
   pqFiltersMenuReaction::createFilter("filters", "ExtractSelection");
 }
 
 //-----------------------------------------------------------------------------
-void pqDataQueryReaction::onExtractSelectionOverTime()
+void pqSelectionReaction::onExtractOverTime()
 {
   pqFiltersMenuReaction::createFilter("filters", "ExtractSelectionOverTime");
 }
 
 //-----------------------------------------------------------------------------
-void pqDataQueryReaction::showHelp()
+void pqSelectionReaction::showInspector()
 {
-  pqHelpReaction::showHelp("qthelp://paraview.org/paraview/Book/Book_Chapter6.html");
+  pqSelectionInspectorPanel* inspector = this->findInspector();
+  if (inspector)
+    {
+    inspector->parentWidget()->show();
+    }
 }
 
 //-----------------------------------------------------------------------------
-void pqDataQueryReaction::showQueryDialog()
+pqSelectionInspectorPanel* pqSelectionReaction::findInspector()
 {
-#ifdef PARAVIEW_ENABLE_PYTHON
-  // If there is an active selection and it is a Query selection,
-  // make its source the default source for the dialog.
-  // Otherwise, use the first active filter's output.
-  pqOutputPort* defaultSource = pqActiveObjects::instance().activePort();
-  pqSelectionManager* selManager =
-    pqPVApplicationCore::instance()->selectionManager();
-  if (selManager)
+  pqSelectionInspectorPanel* inspector = 0;
+
+  if (qApp)
     {
-    pqOutputPort* selectionSource = selManager->getSelectedPort();
-    if (selectionSource)
+    int ntop = static_cast<int>(qApp->topLevelWidgets().size());
+    for (int i = 0; i < ntop; ++i)
       {
-      defaultSource = selectionSource;
+      QWidget* widg = qApp->topLevelWidgets().at(i);
+      foreach (inspector, widg->findChildren<pqSelectionInspectorPanel*>())
+        {
+        return inspector;
+        break;
+        }
       }
     }
+  return inspector;
+}
 
-  pqQueryDialog dialog(defaultSource, pqCoreUtilities::mainWidget());
-
-  // We want to make the query the active application-wide selection, so we
-  // hook up the query action to selection manager so that the application
-  // realizes a new selection has been made.
-  if (selManager)
+void pqSelectionReaction::connectInspector(pqSelectionInspectorPanel* ins)
+{
+  if (ins)
     {
-    QObject::connect(&dialog, SIGNAL(selected(pqOutputPort*)),
-      selManager, SLOT(select(pqOutputPort*)));
+    QObject::connect(
+      ins, SIGNAL(onExtractSelection()),
+      this, SLOT(onExtractSelection()));
+    QObject::connect(
+      ins, SIGNAL(onExtractOverTime()),
+      this, SLOT(onExtractOverTime()));
     }
-  dialog.show();
-  QEventLoop loop;
-  QObject::connect(&dialog, SIGNAL(finished(int)),
-                   &loop,   SLOT(quit()));
-  QObject::connect(&dialog, SIGNAL(extractSelection()),
-                   this,    SLOT(onExtractSelection()));
-  QObject::connect(&dialog, SIGNAL(extractSelectionOverTime()),
-                   this,    SLOT(onExtractSelectionOverTime()));
-  QObject::connect(&dialog, SIGNAL(helpRequested()),
-                   this,    SLOT(showHelp()));
-  loop.exec();
-#else
-  QMessageBox::warning(0,
-                       "Selection Not Supported",
-                       "Error: Find Data requires that ParaView be built with "
-                       "Python enabled. To enable Python set the CMake flag '"
-                       "PARAVIEW_ENABLE_PYTHON' to True.");
-#endif // PARAVIEW_ENABLE_PYTHON
 }

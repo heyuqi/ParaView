@@ -7,7 +7,7 @@
    All rights reserved.
 
    ParaView is a free software; you can redistribute it and/or modify it
-   under the terms of the ParaView license version 1.2. 
+   under the terms of the ParaView license version 1.2.
 
    See License_v1.2.txt for the full ParaView license.
    A copy of this license can be obtained by contacting
@@ -39,17 +39,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pqOutputPort.h"
 #include "pqOutputPortComboBox.h"
 #include "pqPipelineSource.h"
-#include "pqPropertyLinks.h"
 #include "pqQueryClauseWidget.h"
+#include "pqSelectionInspectorPanel.h"
 #include "pqServer.h"
 #include "pqSignalAdaptors.h"
-#include "pqSpreadSheetViewModel.h"
 #include "pqUndoStack.h"
 #include "vtkDataObject.h"
+#include "vtkInformation.h"
+#include "vtkNew.h"
 #include "vtkPVArrayInformation.h"
 #include "vtkPVDataInformation.h"
 #include "vtkPVDataSetAttributesInformation.h"
+#include "vtkPVSelectionInformation.h"
 #include "vtkSmartPointer.h"
+#include "vtkSelection.h"
 #include "vtkSMGlobalPropertiesManager.h"
 #include "vtkSMPropertyHelper.h"
 #include "vtkSMProperty.h"
@@ -67,18 +70,6 @@ class pqQueryDialog::pqInternals : public Ui::pqQueryDialog
 {
 public:
   QList<pqQueryClauseWidget*> Clauses;
-  pqSpreadSheetViewModel* DataModel;
-  pqPropertyLinks Links;
-  vtkSmartPointer<vtkSMViewProxy> ViewProxy;
-  vtkSmartPointer<vtkSMProxy> RepresentationProxy;
-
-  pqPropertyLinks LabelColorLinks;
-  pqSignalAdaptorColor* LabelColorAdaptor;
-  pqInternals()
-    {
-    this->DataModel = NULL;
-    this->LabelColorAdaptor = NULL;
-    }
 };
 
 //-----------------------------------------------------------------------------
@@ -98,11 +89,13 @@ pqQueryDialog::pqQueryDialog(
   if(_producer != NULL)
     {
     this->Internals->source->setCurrentPort(_producer);
-    this->populateSelectionType();
     }
-
-  // Ensure that there's only 1 clause
-  this->resetClauses();
+  else
+    {
+    // Ensure that there's only 1 clause
+    this->resetClauses();
+    }
+  this->populateSelectionType(); // calls resetClauses
 
   QObject::connect(this->Internals->selectionType,
     SIGNAL(currentIndexChanged(int)),
@@ -117,100 +110,29 @@ pqQueryDialog::pqQueryDialog(
   QObject::connect(this->Internals->runQuery,
     SIGNAL(clicked()), this, SLOT(runQuery()));
 
-  // Setup the spreadsheet view.
-  this->Internals->spreadsheet->setModel(NULL);
-
-  // Link the selection color to the global selection color so that it will
-  // affect all views, otherwise user may be get confused ;).
-  vtkSMGlobalPropertiesManager* globalPropertiesManager =
-    pqApplicationCore::instance()->getGlobalPropertiesManager();
-
-  pqSignalAdaptorColor* adaptor = new pqSignalAdaptorColor(
-    this->Internals->selectionColor, "chosenColor",
-    SIGNAL(chosenColorChanged(const QColor&)), false);
-  this->Internals->Links.addPropertyLink(
-    adaptor,
-    "color", SIGNAL(colorChanged(const QVariant&)),
-    globalPropertiesManager,
-    globalPropertiesManager->GetProperty("SelectionColor"));
-
-  this->Internals->LabelColorAdaptor = new pqSignalAdaptorColor(
-    this->Internals->labelColor, 
-    "chosenColor",
-    SIGNAL(chosenColorChanged(const QColor&)), false);
-
-  QObject::connect(this->Internals->labels,
-    SIGNAL(currentIndexChanged(int)),
-    this, SLOT(setLabel(int)));
-
   QObject::connect(this->Internals->extractSelection,
     SIGNAL(clicked()), this, SLOT(onExtractSelection()));
   QObject::connect(this->Internals->extractSelectionOverTime,
     SIGNAL(clicked()), this, SLOT(onExtractSelectionOverTime()));
 
-  // Make sure that when the input port selection change we are aware of that
-  QObject::connect(this->Internals->source,
-                   SIGNAL(currentIndexChanged(pqOutputPort*)),
-                   this,
-                   SLOT(onSelectionChange(pqOutputPort*)));
+  // Make sure that when the input port selection changes we are aware of it
+  QObject::connect(
+    this->Internals->source, SIGNAL(currentIndexChanged(pqOutputPort*)),
+    this, SLOT(onSelectionChange(pqOutputPort*)));
 
-  // Connect the view manager to the pqActiveView.
-  QObject::connect(&pqActiveView::instance(),
-    SIGNAL(changed(pqView*)),
-    this, SLOT(onActiveViewChanged(pqView*)));
-
-  this->onSelectionChange(_producer);
+  if (this->Producer != NULL)
+    {
+    vtkPVDataInformation* dataInfo = this->Internals->source->currentPort()->getDataInformation();
+    this->Internals->extractSelectionOverTime->setEnabled(
+      dataInfo->GetTimeSpan()[0] >= dataInfo->GetTimeSpan()[1]);
+    }
 }
 
 //-----------------------------------------------------------------------------
 pqQueryDialog::~pqQueryDialog()
 {
-  if(this->Internals)
-    {
-    this->freeSMProxy();
-    delete this->Internals;
-    }
+  delete this->Internals;
   this->Internals = 0;
-}
-
-//-----------------------------------------------------------------------------
-void pqQueryDialog::setupSpreadSheet()
-{
-  this->Internals->spreadsheet->setModel(NULL);
-  if(this->Internals->source->currentPort() == NULL ||
-     this->Internals->source->currentPort()->getSource()->getProxy()->GetObjectsCreated() != 1)
-    {
-    return;
-    }
-  vtkSMSessionProxyManager* pxm =
-      this->Internals->source->currentPort()->getSource()->proxyManager();
-
-  vtkSMProxy* repr = pxm->NewProxy("representations", "SpreadSheetRepresentation");
-  // we always want to show all the blocks in the dataset, since we don't have a
-  // block chooser widget in this dialog.
-  vtkSMPropertyHelper(repr, "CompositeDataSetIndex").Set(0);
-  vtkSMPropertyHelper(repr, "Input").Set(
-      this->Internals->source->currentPort()->getSource()->getProxy(),
-      this->Internals->source->currentPort()->getPortNumber());
-  repr->UpdateVTKObjects();
-
-  vtkSMViewProxy* view = vtkSMViewProxy::SafeDownCast(
-    pxm->NewProxy("views", "SpreadSheetView"));
-  vtkSMPropertyHelper(view, "SelectionOnly").Set(1);
-  vtkSMPropertyHelper(view, "Representations").Set(repr);
-  vtkSMPropertyHelper(view, "ViewSize").Set(0, 1);
-  vtkSMPropertyHelper(view, "ViewSize").Set(1, 1);
-  view->UpdateVTKObjects();
-  view->StillRender();;
-
-  this->Internals->ViewProxy.TakeReference(view);
-  this->Internals->RepresentationProxy.TakeReference(repr);
-  this->Internals->DataModel = new pqSpreadSheetViewModel(view, this);
-  this->Internals->DataModel->setActiveRepresentationProxy(repr);
-  // We deliberately don't set the model on the view here. We do that
-  // after all updates have happened. This keeps any progress events from
-  // mixing with the paint events and causing random test failures on
-  // dashboards (FindDataDialog test).
 }
 
 #include <QInputEvent>
@@ -220,8 +142,11 @@ void pqQueryDialog::setupSpreadSheet()
 void pqQueryDialog::populateSelectionType()
 {
   this->Internals->selectionType->clear();
-  vtkPVDataInformation* dataInfo =
-      this->Internals->source->currentPort()->getDataInformation();
+  pqOutputPort* oport = this->Internals->source->currentPort();
+  vtkPVDataInformation* dataInfo = oport->getDataInformation();
+
+  // WARNING: If you change the order of entries in the selectionType combobox,
+  // you must change the switch(fieldType) cases below!
   if (dataInfo->DataSetTypeIsA("vtkGraph"))
     {
     this->Internals->selectionType->addItem("Vertex", vtkDataObject::VERTEX);
@@ -236,10 +161,70 @@ void pqQueryDialog::populateSelectionType()
     this->Internals->selectionType->addItem("Cell",  vtkDataObject::CELL);
     this->Internals->selectionType->addItem("Point", vtkDataObject::POINT);
     }
+
+  // Now fill in values using the previous query selection (if any)
+  vtkSMSourceProxy* filter = vtkSMSourceProxy::SafeDownCast(oport->getSource()->getProxy());
+  std::string queryString;
+  QString compositeIndex;
+  if (filter)
+    {
+    int sprt = 0;
+    vtkSMSourceProxy* seln;
+    for (sprt = 0; (seln = filter->GetSelectionInput(sprt)) != NULL; ++sprt)
+      {
+      // TODO: Handle type safety in a less fragile way here:
+      if (!strcmp(seln->GetVTKClassName(),"vtkQuerySelectionSource"))
+        {
+        vtkNew<vtkPVSelectionInformation> selnInfo;
+        seln->GatherInformation(selnInfo.GetPointer());
+        vtkSelection* selnSpec = selnInfo->GetSelection();
+        if (selnSpec)
+          {
+          int nsnodes = selnSpec->GetNumberOfNodes();
+          vtkSelectionNode* selnNode = selnSpec->GetNode(0);
+          if (nsnodes > 0 && selnNode)
+            {
+            if (selnNode->GetContentType() == vtkSelectionNode::QUERY)
+              {
+              // Set the selection type from the previous query
+              int fieldType = selnNode->GetFieldType();
+              switch (fieldType)
+                {
+              case vtkSelectionNode::VERTEX:
+              case vtkSelectionNode::CELL:
+              case vtkSelectionNode::ROW:
+                this->Internals->selectionType->setCurrentIndex(0);
+                break;
+              case vtkSelectionNode::POINT:
+              case vtkSelectionNode::EDGE:
+                this->Internals->selectionType->setCurrentIndex(1);
+                break;
+              case vtkSelectionNode::FIELD:
+                this->Internals->selectionType->setCurrentIndex(this->Internals->selectionType->count()-1);
+                break;
+              default:
+                vtkGenericWarningMacro(<< "Unknown field type " << fieldType << " for selection");
+                break;
+                }
+              // Set the query clause(s) from the query string.
+              queryString = selnNode->GetQueryString();
+              vtkInformation* selnProp = selnNode->GetProperties();
+              if (selnProp->Has(vtkSelectionNode::COMPOSITE_INDEX()))
+                {
+                compositeIndex = QString("%1").arg(
+                  selnProp->Get(vtkSelectionNode::COMPOSITE_INDEX()));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  this->resetClauses(queryString.empty() ? NULL : queryString.c_str(), compositeIndex);
 }
 
 //-----------------------------------------------------------------------------
-void pqQueryDialog::resetClauses()
+void pqQueryDialog::resetClauses(const char* query, const QString& compositeIndex)
 {
   foreach (pqQueryClauseWidget* clause, this->Internals->Clauses)
     {
@@ -251,11 +236,11 @@ void pqQueryDialog::resetClauses()
   QVBoxLayout *vbox = new QVBoxLayout(this->Internals->queryClauseFrame);
   vbox->setMargin(0);
 
-  this->addClause();
+  this->addClause(query, compositeIndex);
 }
 
 //-----------------------------------------------------------------------------
-void pqQueryDialog::addClause()
+void pqQueryDialog::addClause(const char* query, const QString& compositeIndex)
 {
   if(this->Internals->source->currentPort() == NULL ||
      this->Internals->source->currentPort()->getSource()->getProxy()->GetObjectsCreated() != 1)
@@ -272,8 +257,7 @@ void pqQueryDialog::addClause()
     this->Internals->selectionType->currentIndex()).toInt();
   clause->setProducer(this->Internals->source->currentPort());
   clause->setAttributeType(attr_type);
-  clause->initialize();
-
+  clause->initialize(query, compositeIndex);
   this->Internals->Clauses.push_back(clause);
 
   QVBoxLayout* vbox =
@@ -310,354 +294,45 @@ void pqQueryDialog::runQuery()
 
   selectionSource->UpdateVTKObjects();
 
-  this->setupSpreadSheet();
-
-  // setupSpreadSheet already does this, but I am doing this again to be
-  // extra sure :).
-  this->Internals->spreadsheet->setModel(NULL);
-
   this->Internals->source->currentPort()->setSelectionInput(
       vtkSMSourceProxy::SafeDownCast(selectionSource), 0);
   selectionSource->Delete();
 
   this->Internals->source->currentPort()->renderAllViews();
 
-  vtkSMProxy* repr = this->Internals->RepresentationProxy;
-  // Pass the chosen attribute type to the spreasheet so we show cells or
-  // points etc. based on what was selected.
-  vtkSMPropertyHelper(repr, "FieldAssociation").Set(attr_type);
-  repr->UpdateVTKObjects();
-
-  // this may cause progress events. These can result in paint-event for the table
-  // view which could prematurely start querying information from the model.
-  // To avoid that issue, we don't set the model on  the view until after this call.
-  this->Internals->ViewProxy->StillRender();
-
-  // now set the model on the view.
-  this->Internals->spreadsheet->setModel(this->Internals->DataModel);
-
-  // Once a query has been made, we enable components of the GUI that use the
-  // selection
-  this->Internals->selectionColor->setEnabled(true);
-  this->Internals->labels->setEnabled(true);
   this->Internals->extractSelection->setEnabled(true);
   this->Internals->extractSelectionOverTime->setEnabled(true);
 
-  // update the list of available labels.
-  this->updateLabels();
   emit this->selected(this->Internals->source->currentPort());
-}
 
-//-----------------------------------------------------------------------------
-namespace
-{
-  void pqQueryDialogAddArrays(
-    QComboBox* combobox,
-    vtkPVDataSetAttributesInformation* attrInfo,
-    const QIcon& icon,
-    QVariant data)
+  // Hide this dialog:
+  this->accept();
+  // Bring up the selection inspector if it is not already visible:
+  if (qApp)
     {
-    for (int cc=0; cc < attrInfo->GetNumberOfArrays(); cc++)
+    int ntop = static_cast<int>(qApp->topLevelWidgets().size());
+    for (int i = 0; i < ntop; ++i)
       {
-      vtkPVArrayInformation* arrayInfo = attrInfo->GetArrayInformation(cc);
-      // important to mark partial array since that array may be totally missing
-      // from the selection ;).
-      if (arrayInfo->GetIsPartial())
+      QWidget* widg = qApp->topLevelWidgets().at(i);
+      foreach (pqSelectionInspectorPanel* inspector, widg->findChildren<pqSelectionInspectorPanel*>())
         {
-        combobox->addItem(icon, 
-          QString ("%1 (partial)").arg(arrayInfo->GetName()), data); 
-        }
-      else
-        {
-        combobox->addItem(icon, arrayInfo->GetName(), data); 
+        inspector->parentWidget()->show();
+        return;
         }
       }
     }
-};
-
-//-----------------------------------------------------------------------------
-void pqQueryDialog::updateLabels()
-{
-  // try to preserve the current label choice.
-  int cur_index = this->Internals->labels->currentIndex();
-  QString cur_text;
-  int cur_item_data = 0;
-  if (cur_index != -1)
-    {
-    this->Internals->labels->currentText();
-    cur_item_data = this->Internals->labels->itemData(cur_index).toInt();
-    }
-
-  this->Internals->labels->blockSignals(true);
-  this->Internals->labels->clear();
-  this->Internals->labels->addItem("None", -1);
-
-
-  int attr_type = this->Internals->selectionType->itemData(
-    this->Internals->selectionType->currentIndex()).toInt();
-
-  QIcon cellDataIcon(":/pqWidgets/Icons/pqCellData16.png");
-  QIcon pointDataIcon(":/pqWidgets/Icons/pqPointData16.png");
-
-  vtkPVDataInformation* dataInfo = this->Internals->source->currentPort()->getDataInformation();
-
-  // Only adding cells and points for now since our labelling code doesn't
-  // support vertex or edge labels.
-  this->Internals->labels->addItem(pointDataIcon, "Point ID", -2);
-  pqQueryDialogAddArrays(
-    this->Internals->labels,
-    dataInfo->GetPointDataInformation(),
-    pointDataIcon,
-    vtkDataObject::POINT);
-  if (attr_type == vtkDataObject::CELL)
-    {
-    // don't add cell arrays if selection type is "Point".
-    this->Internals->labels->addItem(cellDataIcon, "Cell ID", -3);
-    pqQueryDialogAddArrays(
-      this->Internals->labels,
-      dataInfo->GetCellDataInformation(), cellDataIcon,
-      vtkDataObject::CELL);
-    }
-  this->Internals->labels->blockSignals(false);
-
-  if (cur_index != -1)
-    {
-    int new_index = this->Internals->labels->findText(cur_text);
-    if (new_index != -1 &&
-      this->Internals->labels->itemData(new_index).toInt() == cur_item_data)
-      {
-      this->Internals->labels->setCurrentIndex(new_index);
-      }
-    else
-      {
-      this->setLabel(0); // i.e. no labels.
-      }
-    }
-}
-
-//-----------------------------------------------------------------------------
-void pqQueryDialog::setLabel(int index)
-{
-  // disabled when not labelling.
-  this->Internals->labelColor->setEnabled(index > 0); 
-
-  pqDataRepresentation* repr =
-      this->Internals->source->currentPort()->getRepresentation(
-          pqActiveObjects::instance().activeView());
-  if (!repr)
-    {
-    return;
-    }
-
-  BEGIN_UNDO_SET("Label mode changed");
-  vtkSMProxy* reprProxy = repr->getProxy();
-  int item_data = this->Internals->labels->itemData(index).toInt();
-  QString array_name = this->Internals->labels->currentText();
-
-  if (item_data == -2  || item_data == vtkDataObject::POINT)
-    {
-    vtkSMPropertyHelper(reprProxy, "SelectionPointLabelVisibility", true).Set(1);
-    vtkSMPropertyHelper(reprProxy, "SelectionCellLabelVisibility", true).Set(0);
-
-    if (item_data == vtkDataObject::POINT)
-      {
-      vtkSMPropertyHelper(reprProxy, "SelectionPointFieldDataArrayName",
-        true).Set(array_name.toAscii().data());
-      }
-    else
-      {
-      vtkSMPropertyHelper(reprProxy, "SelectionPointFieldDataArrayName",
-        true).Set("vtkOriginalPointIds");
-      }
-    // based on whether cell or point labels are selected, we need to link the
-    // "Label Color" widget with the right property.
-    this->linkLabelColorWidget(reprProxy, "SelectionPointLabelColor");
-    }
-  else if (item_data == -3  || item_data == vtkDataObject::CELL)
-    {
-    vtkSMPropertyHelper(reprProxy, "SelectionPointLabelVisibility", true).Set(0);
-    vtkSMPropertyHelper(reprProxy, "SelectionCellLabelVisibility", true).Set(1);
-
-    if (item_data == vtkDataObject::CELL)
-      {
-      vtkSMPropertyHelper(reprProxy, "SelectionCellFieldDataArrayName",
-        true).Set(array_name.toAscii().data());
-      }
-    else
-      {
-      vtkSMPropertyHelper(reprProxy, "SelectionCellFieldDataArrayName",
-        true).Set("vtkOriginalCellIds");
-      }
-    // based on whether cell or point labels are selected, we need to link the
-    // "Label Color" widget with the right property.
-    this->linkLabelColorWidget(reprProxy, "SelectionCellLabelColor");
-    }
-  else
-    {
-    vtkSMPropertyHelper(reprProxy, "SelectionPointLabelVisibility", true).Set(0);
-    vtkSMPropertyHelper(reprProxy, "SelectionCellLabelVisibility", true).Set(0);
-    }
-
-  reprProxy->UpdateVTKObjects();
-  END_UNDO_SET();
-  this->Internals->source->currentPort()->renderAllViews();
-}
-
-//-----------------------------------------------------------------------------
-void pqQueryDialog::linkLabelColorWidget( vtkSMProxy* proxy,
-                                         const QString& propname)
-{
-  this->Internals->LabelColorLinks.removeAllPropertyLinks();
-  this->Internals->LabelColorLinks.addPropertyLink(
-      this->Internals->LabelColorAdaptor,
-      "color",
-      SIGNAL(colorChanged(const QVariant&)),
-      proxy,
-      proxy->GetProperty(propname.toAscii().data()));
 }
 
 //-----------------------------------------------------------------------------
 void pqQueryDialog::onSelectionChange(pqOutputPort* newSelectedPort)
 {
-
-  // Reset the spreadsheet view
   this->resetClauses();
-  this->freeSMProxy();
-
-  if(this->Producer != NULL)
-    {
-    // Disconnect previous render
-    QObject::disconnect( &this->Internals->Links, SIGNAL(qtWidgetChanged()),
-                         this->Producer, SLOT(renderAllViews()));
-    QObject::disconnect( &this->Internals->LabelColorLinks, SIGNAL(qtWidgetChanged()),
-                         this->Producer, SLOT(renderAllViews()));
-    }
 
   this->Producer = newSelectedPort;
-
   if(this->Producer != NULL)
     {
-    // Render all views when any selection property is modified.
-    QObject::connect( &this->Internals->Links, SIGNAL(qtWidgetChanged()),
-                      this->Producer, SLOT(renderAllViews()));
-    QObject::connect( &this->Internals->LabelColorLinks, SIGNAL(qtWidgetChanged()),
-                      this->Producer, SLOT(renderAllViews()));
-
     vtkPVDataInformation* dataInfo = this->Internals->source->currentPort()->getDataInformation();
-    if (dataInfo->GetTimeSpan()[0] >= dataInfo->GetTimeSpan()[1])
-      {
-      // don't show the extract selection over time option is there's not time!
-      this->Internals->extractSelectionOverTime->hide();
-      }
-    else
-      {
-      this->Internals->extractSelectionOverTime->show();
-      }
-    this->updateLabels();
+    this->Internals->extractSelectionOverTime->setEnabled(
+      dataInfo->GetTimeSpan()[0] >= dataInfo->GetTimeSpan()[1]);
     }
-  else
-    {
-    // As no more datasource is available make sure that we free the ressources
-    this->freeSMProxy();
-    }
-}
-
-//-----------------------------------------------------------------------------
-void pqQueryDialog::onActiveViewChanged(pqView* view)
-{
-  if(this->Internals->source->currentPort() == NULL)
-    {
-    // We are in the disconnect case...
-    return;
-    }
-  if(view == NULL)
-    {
-    this->Internals->labels->blockSignals(true);
-    this->Internals->labels->setCurrentIndex(0);
-    this->Internals->labels->blockSignals(false);
-    this->Internals->labelColor->setEnabled(false);
-    }
-
-  pqDataRepresentation* repr =
-      this->Internals->source->currentPort()->getRepresentation(
-          pqActiveObjects::instance().activeView());
-  if (!repr)
-    {
-    return;
-    }
-  vtkSMProxy* reprProxy = repr->getProxy();
-
-  // Value container
-  int pointLabel;
-  double pointColor[3];
-  const char* pointArrayName;
-  int cellLabel;
-  double cellColor[3];
-  const char* cellArrayName;
-
-  // Get point infos
-  vtkSMPropertyHelper(reprProxy, "SelectionPointLabelVisibility", true).Get(&pointLabel, 1);
-  vtkSMPropertyHelper(reprProxy, "SelectionPointLabelColor", true).Get(pointColor, 3);
-  pointArrayName = vtkSMStringVectorProperty::SafeDownCast(
-      reprProxy->GetProperty("SelectionPointFieldDataArrayName"))->GetElement(0);
-
-  // Get cell infos
-  vtkSMPropertyHelper(reprProxy, "SelectionCellLabelVisibility", true).Get(&cellLabel, 1);
-  vtkSMPropertyHelper(reprProxy, "SelectionCellLabelColor", true).Get(cellColor, 3);
-  cellArrayName = vtkSMStringVectorProperty::SafeDownCast(
-      reprProxy->GetProperty("SelectionCellFieldDataArrayName"))->GetElement(0);
-
-  // Set those values to the UI
-  int new_index = 0;
-  if(pointLabel == 1)
-    {
-    new_index = this->Internals->labels->findText(pointArrayName);
-    this->Internals->labelColor->blockSignals(true);
-    this->Internals->labelColor->setChosenColor(
-        QColor( static_cast<int>(pointColor[0]*255.0),
-                static_cast<int>(pointColor[1]*255.0),
-                static_cast<int>(pointColor[2]*255.0), 255 ));
-    this->Internals->labelColor->repaint();
-    this->Internals->labelColor->blockSignals(false);
-    if(new_index == -1 && strcmp(pointArrayName, "vtkOriginalPointIds") == 0)
-      {
-      new_index = this->Internals->labels->findText("Point ID");
-      }
-    this->linkLabelColorWidget(reprProxy, "SelectionPointLabelColor");
-    }
-  else if(cellLabel == 1)
-    {
-    new_index = this->Internals->labels->findText(cellArrayName);
-    this->Internals->labelColor->blockSignals(true);
-    this->Internals->labelColor->setChosenColor(
-        QColor( static_cast<int>(cellColor[0]*255.0),
-                static_cast<int>(cellColor[1]*255.0),
-                static_cast<int>(cellColor[2]*255.0), 255 ));
-    this->Internals->labelColor->repaint();
-    this->Internals->labelColor->blockSignals(false);
-    if(new_index == -1 && strcmp(cellArrayName, "vtkOriginalCellIds") == 0)
-      {
-      new_index = this->Internals->labels->findText("Cell ID");
-      }
-    this->linkLabelColorWidget(reprProxy, "SelectionCellLabelColor");
-    }
-
-  // Update combobox
-  if (new_index != -1 && this->Internals->labels->currentIndex() != new_index)
-    {
-    this->Internals->labels->blockSignals(true);
-    this->Internals->labels->setCurrentIndex(new_index);
-    this->Internals->labels->blockSignals(false);
-    this->Internals->labelColor->setEnabled(new_index > 0);
-    }
-}
-//-----------------------------------------------------------------------------
-void pqQueryDialog::freeSMProxy()
-{
-  this->Internals->DataModel = NULL;
-  this->Internals->Links.removeAllPropertyLinks();
-  this->Internals->LabelColorLinks.removeAllPropertyLinks();
-  this->Internals->ViewProxy = NULL;
-  this->Internals->RepresentationProxy = NULL;
-  this->Internals->spreadsheet->setModel(NULL);
 }
