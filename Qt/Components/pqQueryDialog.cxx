@@ -207,12 +207,15 @@ void pqQueryDialog::populateSelectionType()
                 break;
                 }
               // Set the query clause(s) from the query string.
-              queryString = selnNode->GetQueryString();
-              vtkInformation* selnProp = selnNode->GetProperties();
-              if (selnProp->Has(vtkSelectionNode::COMPOSITE_INDEX()))
+              if (selnNode->GetQueryString())
                 {
-                compositeIndex = QString("%1").arg(
-                  selnProp->Get(vtkSelectionNode::COMPOSITE_INDEX()));
+                queryString = selnNode->GetQueryString();
+                vtkInformation* selnProp = selnNode->GetProperties();
+                if (selnProp->Has(vtkSelectionNode::COMPOSITE_INDEX()))
+                  {
+                  compositeIndex = QString("%1").arg(
+                    selnProp->Get(vtkSelectionNode::COMPOSITE_INDEX()));
+                  }
                 }
               }
             }
