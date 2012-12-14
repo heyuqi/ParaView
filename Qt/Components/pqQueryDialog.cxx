@@ -45,10 +45,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pqSignalAdaptors.h"
 #include "pqUndoStack.h"
 #include "vtkDataObject.h"
+#include "vtkInformation.h"
+#include "vtkNew.h"
 #include "vtkPVArrayInformation.h"
 #include "vtkPVDataInformation.h"
 #include "vtkPVDataSetAttributesInformation.h"
+#include "vtkPVSelectionInformation.h"
 #include "vtkSmartPointer.h"
+#include "vtkSelection.h"
 #include "vtkSMGlobalPropertiesManager.h"
 #include "vtkSMPropertyHelper.h"
 #include "vtkSMProperty.h"
@@ -85,11 +89,13 @@ pqQueryDialog::pqQueryDialog(
   if(_producer != NULL)
     {
     this->Internals->source->setCurrentPort(_producer);
-    this->populateSelectionType();
     }
-
-  // Ensure that there's only 1 clause
-  this->resetClauses();
+  else
+    {
+    // Ensure that there's only 1 clause
+    this->resetClauses();
+    }
+  this->populateSelectionType(); // calls resetClauses
 
   QObject::connect(this->Internals->selectionType,
     SIGNAL(currentIndexChanged(int)),
@@ -114,7 +120,12 @@ pqQueryDialog::pqQueryDialog(
     this->Internals->source, SIGNAL(currentIndexChanged(pqOutputPort*)),
     this, SLOT(onSelectionChange(pqOutputPort*)));
 
-  this->onSelectionChange(_producer);
+  if (this->Producer != NULL)
+    {
+    vtkPVDataInformation* dataInfo = this->Internals->source->currentPort()->getDataInformation();
+    this->Internals->extractSelectionOverTime->setEnabled(
+      dataInfo->GetTimeSpan()[0] >= dataInfo->GetTimeSpan()[1]);
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -131,8 +142,11 @@ pqQueryDialog::~pqQueryDialog()
 void pqQueryDialog::populateSelectionType()
 {
   this->Internals->selectionType->clear();
-  vtkPVDataInformation* dataInfo =
-      this->Internals->source->currentPort()->getDataInformation();
+  pqOutputPort* oport = this->Internals->source->currentPort();
+  vtkPVDataInformation* dataInfo = oport->getDataInformation();
+
+  // WARNING: If you change the order of entries in the selectionType combobox,
+  // you must change the switch(fieldType) cases below!
   if (dataInfo->DataSetTypeIsA("vtkGraph"))
     {
     this->Internals->selectionType->addItem("Vertex", vtkDataObject::VERTEX);
@@ -147,10 +161,70 @@ void pqQueryDialog::populateSelectionType()
     this->Internals->selectionType->addItem("Cell",  vtkDataObject::CELL);
     this->Internals->selectionType->addItem("Point", vtkDataObject::POINT);
     }
+
+  // Now fill in values using the previous query selection (if any)
+  vtkSMSourceProxy* filter = vtkSMSourceProxy::SafeDownCast(oport->getSource()->getProxy());
+  std::string queryString;
+  QString compositeIndex;
+  if (filter)
+    {
+    int sprt = 0;
+    vtkSMSourceProxy* seln;
+    for (sprt = 0; (seln = filter->GetSelectionInput(sprt)) != NULL; ++sprt)
+      {
+      // TODO: Handle type safety in a less fragile way here:
+      if (!strcmp(seln->GetVTKClassName(),"vtkQuerySelectionSource"))
+        {
+        vtkNew<vtkPVSelectionInformation> selnInfo;
+        seln->GatherInformation(selnInfo.GetPointer());
+        vtkSelection* selnSpec = selnInfo->GetSelection();
+        if (selnSpec)
+          {
+          int nsnodes = selnSpec->GetNumberOfNodes();
+          vtkSelectionNode* selnNode = selnSpec->GetNode(0);
+          if (nsnodes > 0 && selnNode)
+            {
+            if (selnNode->GetContentType() == vtkSelectionNode::QUERY)
+              {
+              // Set the selection type from the previous query
+              int fieldType = selnNode->GetFieldType();
+              switch (fieldType)
+                {
+              case vtkSelectionNode::VERTEX:
+              case vtkSelectionNode::CELL:
+              case vtkSelectionNode::ROW:
+                this->Internals->selectionType->setCurrentIndex(0);
+                break;
+              case vtkSelectionNode::POINT:
+              case vtkSelectionNode::EDGE:
+                this->Internals->selectionType->setCurrentIndex(1);
+                break;
+              case vtkSelectionNode::FIELD:
+                this->Internals->selectionType->setCurrentIndex(this->Internals->selectionType->count()-1);
+                break;
+              default:
+                vtkGenericWarningMacro(<< "Unknown field type " << fieldType << " for selection");
+                break;
+                }
+              // Set the query clause(s) from the query string.
+              queryString = selnNode->GetQueryString();
+              vtkInformation* selnProp = selnNode->GetProperties();
+              if (selnProp->Has(vtkSelectionNode::COMPOSITE_INDEX()))
+                {
+                compositeIndex = QString("%1").arg(
+                  selnProp->Get(vtkSelectionNode::COMPOSITE_INDEX()));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  this->resetClauses(queryString.empty() ? NULL : queryString.c_str(), compositeIndex);
 }
 
 //-----------------------------------------------------------------------------
-void pqQueryDialog::resetClauses()
+void pqQueryDialog::resetClauses(const char* query, const QString& compositeIndex)
 {
   foreach (pqQueryClauseWidget* clause, this->Internals->Clauses)
     {
@@ -162,11 +236,11 @@ void pqQueryDialog::resetClauses()
   QVBoxLayout *vbox = new QVBoxLayout(this->Internals->queryClauseFrame);
   vbox->setMargin(0);
 
-  this->addClause();
+  this->addClause(query, compositeIndex);
 }
 
 //-----------------------------------------------------------------------------
-void pqQueryDialog::addClause()
+void pqQueryDialog::addClause(const char* query, const QString& compositeIndex)
 {
   if(this->Internals->source->currentPort() == NULL ||
      this->Internals->source->currentPort()->getSource()->getProxy()->GetObjectsCreated() != 1)
@@ -183,8 +257,7 @@ void pqQueryDialog::addClause()
     this->Internals->selectionType->currentIndex()).toInt();
   clause->setProducer(this->Internals->source->currentPort());
   clause->setAttributeType(attr_type);
-  clause->initialize();
-
+  clause->initialize(query, compositeIndex);
   this->Internals->Clauses.push_back(clause);
 
   QVBoxLayout* vbox =
@@ -253,23 +326,13 @@ void pqQueryDialog::runQuery()
 //-----------------------------------------------------------------------------
 void pqQueryDialog::onSelectionChange(pqOutputPort* newSelectedPort)
 {
-
-  // Reset the spreadsheet view
   this->resetClauses();
 
   this->Producer = newSelectedPort;
-
   if(this->Producer != NULL)
     {
     vtkPVDataInformation* dataInfo = this->Internals->source->currentPort()->getDataInformation();
-    if (dataInfo->GetTimeSpan()[0] >= dataInfo->GetTimeSpan()[1])
-      {
-      // don't show the extract selection over time option is there's not time!
-      this->Internals->extractSelectionOverTime->hide();
-      }
-    else
-      {
-      this->Internals->extractSelectionOverTime->show();
-      }
+    this->Internals->extractSelectionOverTime->setEnabled(
+      dataInfo->GetTimeSpan()[0] >= dataInfo->GetTimeSpan()[1]);
     }
 }

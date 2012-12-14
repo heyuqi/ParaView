@@ -134,6 +134,170 @@ void pqQueryClauseWidget::initialize(
 }
 
 //-----------------------------------------------------------------------------
+static bool pqQueryClauseVariable(const QString& glom, QString& labelText, int& component)
+{
+  static const QRegExp varMagRE("mag\\((.*)\\)");
+  static const QRegExp varIdxRE("(.+)\\[:,(\\d+)\\]");
+  if (varMagRE.indexIn(glom) >= 0)
+    {
+    component = -1;
+    labelText = varMagRE.cap(1);
+    }
+  else if (varIdxRE.indexIn(glom) >= 0)
+    {
+    QVariant compStr(varIdxRE.cap(2));
+    component = compStr.toInt();
+    labelText = varIdxRE.cap(1);
+    }
+  else
+    {
+    component = 0;
+    labelText = glom;
+    }
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+void pqQueryClauseWidget::initialize(
+  const char* query, const QString& compositeIndex)
+{
+  this->initialize();
+  if (!query || !query[0])
+    {
+    return;
+    }
+  QString qq(query);
+  // Where noted, spaces are significant because array names may have leading/trailing spaces
+  // and do not appear to be escaped in addSelectionQualifiers(). Try to handle craziness, but
+  // realize that a malevolent or unfortunately naive user may cause trouble.
+  static const QRegExp isBetweenRE("\\(([^>]+) > ([^\\)]+)\\) & \\(([^>]+) < ([^\\)]+)\\)");
+  static const QRegExp isCloseToMeanRE("abs\\((.*) - global_mean\\((.*)\\)\\) < (.*)");
+  static const QRegExp isOneOfRE("contains\\((.*),\\[(.*)\\]\\)");
+  // Note additional space before operator matches query generation below:
+  static const QRegExp isToSideOfMeanRE("(.*)  ([<>]=) global_mean\\((.*)\\)");
+  // Note additional space before equality operator matches query generation below:
+  static const QRegExp isExtremalRE("(.*)  == global_(max|min)\\((.*)\\)");
+  static const QRegExp isRelatedToValueRE("(.*) (<|>|<=|>=|==|!=) (.*)");
+  QString label;
+  int comp = 0;
+  bool couldParse = false;
+  if (isBetweenRE.indexIn(qq) >= 0)
+    {
+    pqQueryClauseVariable(isBetweenRE.cap(1), label, comp);
+    this->selectVariable(label, comp);
+    this->selectCondition(pqQueryClauseWidget::PAIR_OF_VALUES);
+    this->Internals->value_min->setText(isBetweenRE.cap(2));
+    this->Internals->value_max->setText(isBetweenRE.cap(4));
+    couldParse = true;
+    }
+  else if (isCloseToMeanRE.indexIn(qq) >= 0)
+    {
+    pqQueryClauseVariable(isCloseToMeanRE.cap(1), label, comp);
+    this->selectVariable(label, comp);
+    this->selectCondition(pqQueryClauseWidget::SINGLE_VALUE_MEAN_WITH_TOLERANCE);
+    this->Internals->value->setText(isCloseToMeanRE.cap(3));
+    couldParse = true;
+    }
+  else if (isOneOfRE.indexIn(qq) >= 0)
+    {
+    pqQueryClauseVariable(isOneOfRE.cap(1), label, comp);
+    this->selectVariable(label, comp);
+    this->selectCondition(pqQueryClauseWidget::LIST_OF_VALUES);
+    this->Internals->value->setText(isOneOfRE.cap(2));
+    couldParse = true;
+    }
+  else if (isToSideOfMeanRE.indexIn(qq) >= 0)
+    {
+    pqQueryClauseVariable(isToSideOfMeanRE.cap(1), label, comp);
+    this->selectVariable(label, comp);
+    this->selectCondition(isToSideOfMeanRE.cap(2) == ">=" ?
+      pqQueryClauseWidget::SINGLE_VALUE_GE_MEAN :
+      pqQueryClauseWidget::SINGLE_VALUE_LE_MEAN);
+    couldParse = true;
+    }
+  else if (isExtremalRE.indexIn(qq) >= 0)
+    {
+    pqQueryClauseVariable(isExtremalRE.cap(1), label, comp);
+    this->selectVariable(label, comp);
+    this->selectCondition(isExtremalRE.cap(2) == "max" ?
+      pqQueryClauseWidget::SINGLE_VALUE_MAX :
+      pqQueryClauseWidget::SINGLE_VALUE_MIN);
+    // assert(cap(1) == cap(3))
+    couldParse = true;
+    }
+  else if (isRelatedToValueRE.indexIn(qq) >= 0)
+    {
+    pqQueryClauseVariable(isRelatedToValueRE.cap(1), label, comp);
+    pqQueryClauseWidget::ConditionMode mode =
+      (isRelatedToValueRE.cap(2) == "==" ? pqQueryClauseWidget::SINGLE_VALUE :
+       (isRelatedToValueRE.cap(2) == ">=" ? pqQueryClauseWidget::SINGLE_VALUE_GE :
+        (isRelatedToValueRE.cap(2) == "<=" ? pqQueryClauseWidget::SINGLE_VALUE_LE :
+         pqQueryClauseWidget::BLOCK_ID_VALUE)));
+    if (mode != pqQueryClauseWidget::BLOCK_ID_VALUE)
+      {
+      this->selectVariable(label, comp);
+      this->selectCondition(mode);
+      this->Internals->value->setText(isRelatedToValueRE.cap(3));
+      couldParse = true;
+      }
+    }
+  if (!couldParse)
+    {
+    this->selectVariable(QString("Query"), 0);
+    this->Internals->value->setText(qq);
+    }
+  this->selectCompositeIndex(compositeIndex);
+}
+
+//-----------------------------------------------------------------------------
+bool pqQueryClauseWidget::selectVariable(const QString& variable, int component)
+{
+  // Loop through items in combobox until we find a match for variable.
+  // Set that item to be the active one. Call this before selectCondition.
+  int entry;
+  entry = this->Internals->criteria->findText(variable);
+  if (entry < 0)
+    {
+    QVariant compVar(component);
+    QString suffix = QString(" (%1)").arg(component < 0 ? "Magnitude" : compVar.toString());
+    entry = this->Internals->criteria->findText(variable + suffix);
+    }
+  if (entry >= 0)
+    {
+    this->Internals->criteria->setCurrentIndex(entry);
+    return true;
+    }
+  return false;
+}
+
+//-----------------------------------------------------------------------------
+bool pqQueryClauseWidget::selectCondition(pqQueryClauseWidget::ConditionMode mode)
+{
+  for (int i = 0; i < this->Internals->condition->count(); ++i)
+    {
+    if (this->Internals->condition->itemData(i) == mode)
+      {
+      this->Internals->condition->setCurrentIndex(i);
+      return true;
+      }
+    }
+  return false;
+}
+
+//-----------------------------------------------------------------------------
+bool pqQueryClauseWidget::selectCompositeIndex(const QString& compositeIndex)
+{
+  QList<pqQueryClauseWidget*> subWidgets;
+  subWidgets = this->findChildren<pqQueryClauseWidget*>();
+  if (subWidgets.length() > 0)
+    {
+    subWidgets.at(0)->Internals->value_block->setText(compositeIndex);
+    return true;
+    }
+  return false;
+}
+
+//-----------------------------------------------------------------------------
 pqQueryClauseWidget::CriteriaType
 pqQueryClauseWidget::currentCriteriaType() const
 {

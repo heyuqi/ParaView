@@ -77,15 +77,26 @@ void pqDataQueryReaction::showHelp()
 void pqDataQueryReaction::showQueryDialog()
 {
 #ifdef PARAVIEW_ENABLE_PYTHON
-  pqQueryDialog dialog(
-    pqActiveObjects::instance().activePort(),
-    pqCoreUtilities::mainWidget());
-
-  // We want to make the query the active application wide selection, so we
-  // hookup the query action to selection manager so that the application
-  // realizes a new selection has been made.
+  // If there is an active selection and it is a Query selection,
+  // make its source the default source for the dialog.
+  // Otherwise, use the first active filter's output.
+  pqOutputPort* defaultSource = pqActiveObjects::instance().activePort();
   pqSelectionManager* selManager =
     pqPVApplicationCore::instance()->selectionManager();
+  if (selManager)
+    {
+    pqOutputPort* selectionSource = selManager->getSelectedPort();
+    if (selectionSource)
+      {
+      defaultSource = selectionSource;
+      }
+    }
+
+  pqQueryDialog dialog(defaultSource, pqCoreUtilities::mainWidget());
+
+  // We want to make the query the active application-wide selection, so we
+  // hook up the query action to selection manager so that the application
+  // realizes a new selection has been made.
   if (selManager)
     {
     QObject::connect(&dialog, SIGNAL(selected(pqOutputPort*)),

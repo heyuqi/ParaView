@@ -1456,6 +1456,7 @@ void pqSelectionInspectorPanel::onSelectionTypeChanged(const QString&)
 void pqSelectionInspectorPanel::onSelectionManagerChanged(pqOutputPort* opport)
 {
   this->selectGlobalIdsIfPossible(opport,false,false);
+  this->updateExtractButtonStates(opport);
 }
 
 //-----------------------------------------------------------------------------
@@ -1826,6 +1827,20 @@ void pqSelectionInspectorPanel::updateFrustumInternal(bool showFrustum)
     values24);
   this->Implementation->FrustumWidget->UpdateVTKObjects();
   this->updateRepresentationViews();
+}
+
+//-----------------------------------------------------------------------------
+void pqSelectionInspectorPanel::updateExtractButtonStates(pqOutputPort* opport)
+{
+  bool haveData = opport ? true : false;
+  bool haveTime = false;
+  vtkPVDataInformation* dataInfo;
+  if (opport && (dataInfo = opport->getDataInformation()))
+    {
+    haveTime = !(dataInfo->GetTimeSpan()[0] >= dataInfo->GetTimeSpan()[1]);
+    }
+  this->Implementation->extractSelection->setEnabled(haveData);
+  this->Implementation->extractOverTime->setEnabled(haveTime);
 }
 
 //-----------------------------------------------------------------------------

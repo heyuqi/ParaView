@@ -81,10 +81,10 @@ protected slots:
   void populateSelectionType();
 
   /// reset the currently chosen clauses
-  void resetClauses();
+  void resetClauses(const char* query = NULL, const QString& compositeIndex = QString());
 
   /// adds a new clause.
-  void addClause();
+  void addClause(const char* query = NULL, const QString& compositeIndex = QString());
 
   /// Called when user click the "Run Query" button.
   void runQuery();

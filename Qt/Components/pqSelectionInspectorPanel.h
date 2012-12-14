@@ -192,6 +192,9 @@ protected:
 
   void updateFrustumInternal(bool);
 
+  /// Called to enable/disable the "extract selection" and "extract over time" buttons as the selection changes.
+  void updateExtractButtonStates(pqOutputPort* opport);
+
   /// Called to update the types of selections available.
   void updateSelectionTypesAvailable(pqOutputPort* opport);
 

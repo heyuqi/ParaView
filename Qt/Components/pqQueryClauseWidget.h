@@ -122,6 +122,9 @@ public slots:
   /// being used as a qualifier or not.
   void initialize(CriteriaTypes type_flags, bool qualifier_mode=false);
 
+  /// initialize the widget using the query string and composite index specified.
+  void initialize(const char* query, const QString& compositeIndex);
+
 signals:
   /// Fired when the user clicks on the help button.
   void helpRequested();
@@ -160,6 +163,18 @@ protected:
 
   /// Updates the selection source proxy with the criteria in the clause.
   void addSelectionQualifiers(vtkSMProxy*);
+
+  /// Used by initialize(query,block) to set the UI to the previous search parameters.
+  virtual bool selectVariable(const QString& variable, int component);
+
+  /// Used by initialize(query,block) to set the UI to the previous search parameters.
+  virtual bool selectCondition(pqQueryClauseWidget::ConditionMode mode);
+
+  /// Used by initialize(query,block) to set the UI to the previous search parameters.
+  ///
+  /// Do not call before selectVariable() as the dependent clause subwidget will not
+  /// exist and thus this call will have no effect.
+  virtual bool selectCompositeIndex(const QString& compositeIndex);
 
   pqOutputPort* Producer;
   int AttributeType;
