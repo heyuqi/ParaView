@@ -97,7 +97,7 @@
 
       <Hints>
         <ReaderFactory extensions="vdf"
-           file_description="Vapor Data File"/>
+           file_description="Plugin : Vapor Data File"/>
       </Hints>
 
     </SourceProxy>
