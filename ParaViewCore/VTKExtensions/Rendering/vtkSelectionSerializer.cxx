@@ -102,6 +102,16 @@ void vtkSelectionSerializer::PrintXML(
       }
     iter->Delete();
 
+    // Write the query string, if any
+    const char* query = node->GetQueryString();
+    if (query && query[0])
+      {
+      os
+        << nodeIndent << "<QueryString>"
+        << vtkPVXMLElement::Encode(query)
+        << "</QueryString>" << endl;
+      }
+
     // Write the selection list
     if (printData)
       {
@@ -422,6 +432,14 @@ void vtkSelectionSerializer::ParseNode(vtkPVXMLElement* nodeXML,
           node->GetSelectionData()->AddArray(stringArray);
           stringArray->Delete();
           }
+        }
+      }
+    else if (strcmp("QueryString", name) == 0)
+      {
+      const char* query = elem->GetCharacterData();
+      if (query && query[0])
+        {
+        node->SetQueryString(query);
         }
       }
     }
