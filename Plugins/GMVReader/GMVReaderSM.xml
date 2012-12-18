@@ -150,7 +150,7 @@
 
       <Hints>
         <ReaderFactory extensions="gmv"
-           file_description="GMV Binary/ASCII Files (Plugin)" />
+           file_description="Plugin : GMV Binary/ASCII Files (Plugin)" />
       </Hints>
 
       <SubProxy>
