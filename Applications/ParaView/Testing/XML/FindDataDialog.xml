@@ -49,8 +49,6 @@
   <pqevent object="pqClientMainWindow/pqQueryDialog/queryClauseFrame/pqQueryClauseWidget/valueStackedWidget/singleValue/value" command="key" arguments="46" />
   <pqevent object="pqClientMainWindow/pqQueryDialog/runQuery" command="activate" arguments="" />
   <pqevent object="pqClientMainWindow/selectionToolbar/actionQuery" command="activate" arguments="" />
-  <pqevent object="pqClientMainWindow/pqQueryDialog/selectionType" command="set_string" arguments="Point" />
-  <pqevent object="pqClientMainWindow/pqQueryDialog/queryClauseFrame/pqQueryClauseWidget/criteria" command="set_string" arguments="DISPL (Magnitude)" />
   <pqevent object="pqClientMainWindow/pqQueryDialog/queryClauseFrame/pqQueryClauseWidget/condition" command="set_string" arguments="is &gt;=" />
   <pqevent object="pqClientMainWindow/pqQueryDialog/queryClauseFrame/pqQueryClauseWidget/valueStackedWidget/singleValue/value" command="set_string" arguments="0.5" />
   <pqevent object="pqClientMainWindow/pqQueryDialog/queryClauseFrame/pqQueryClauseWidget/valueStackedWidget/singleValue/value" command="set_string" arguments="0.5" />
