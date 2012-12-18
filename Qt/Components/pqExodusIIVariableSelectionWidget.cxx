@@ -37,9 +37,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QPointer>
 #include <QtDebug>
 
+#include "pqSMAdaptor.h"
+#include "pqTimer.h"
 #include "pqTreeWidgetCheckHelper.h"
 #include "pqTreeWidgetItemObject.h"
-#include "pqSMAdaptor.h"
 
 namespace
 {
@@ -114,6 +115,7 @@ class pqExodusIIVariableSelectionWidget::pqInternals
 {
 public:
   pqPixmapMap Pixmaps;
+  pqTimer Timer;
 
   QMap<QString, QList<QPointer<pqTreeWidgetItemObject> > > Items;
   pqTreeWidgetItemObject* findItem(
@@ -199,6 +201,8 @@ pqExodusIIVariableSelectionWidget::pqExodusIIVariableSelectionWidget(QWidget* pa
   Internals(new pqInternals())
 {
   this->installEventFilter(this);
+  QObject::connect(&this->Internals->Timer, SIGNAL(timeout()),
+    this, SLOT(updateProperty()));
 
   // Make a click anywhere on a variable's row change its checked/unchecked state.
   new pqTreeWidgetCheckHelper(this, 0, this);
@@ -269,8 +273,17 @@ void pqExodusIIVariableSelectionWidget::setStatus(
 {
   pqTreeWidgetItemObject* item = this->Internals->findItem(this, key, text);
   item->setChecked(value);
+
+  // BUG #13726. To avoid dramatic performance degradation when dealing with
+  // large list of variables, we use a timer to collapse all update requests.
   QObject::connect(item, SIGNAL(checkedStateChanged(bool)),
-    this, SLOT(updateProperty()), Qt::UniqueConnection);
+    this, SLOT(updatePropertyOnce()), Qt::UniqueConnection);
+}
+
+//-----------------------------------------------------------------------------
+void pqExodusIIVariableSelectionWidget::updatePropertyOnce()
+{
+  this->Internals->Timer.start(0);
 }
 
 //-----------------------------------------------------------------------------
