@@ -159,7 +159,9 @@ static bool pqQueryClauseVariable(const QString& glom, QString& labelText, int& 
 
 //-----------------------------------------------------------------------------
 void pqQueryClauseWidget::initialize(
-  const char* query, const QString& compositeIndex)
+  const char* query,
+  const QString& blockConstraint,
+  const QString& processConstraint)
 {
   this->initialize();
   if (!query || !query[0])
@@ -246,7 +248,8 @@ void pqQueryClauseWidget::initialize(
     this->selectVariable(QString("Query"), 0);
     this->Internals->value->setText(qq);
     }
-  this->selectCompositeIndex(compositeIndex);
+  this->setupSubclause(BLOCK, QString("=="), blockConstraint);
+  this->setupSubclause(PROCESSID, QString("=="), processConstraint);
 }
 
 //-----------------------------------------------------------------------------
@@ -285,14 +288,37 @@ bool pqQueryClauseWidget::selectCondition(pqQueryClauseWidget::ConditionMode mod
 }
 
 //-----------------------------------------------------------------------------
-bool pqQueryClauseWidget::selectCompositeIndex(const QString& compositeIndex)
+bool pqQueryClauseWidget::setupSubclause(
+  pqQueryClauseWidget::CriteriaTypes criterion,
+  const QString& condition, const QString& constraint)
 {
   QList<pqQueryClauseWidget*> subWidgets;
   subWidgets = this->findChildren<pqQueryClauseWidget*>();
-  if (subWidgets.length() > 0)
+  foreach(pqQueryClauseWidget* subClause, subWidgets)
     {
-    subWidgets.at(0)->Internals->value_block->setText(compositeIndex);
-    return true;
+    if (subClause)
+      {
+      for (int i = 0; i < subClause->Internals->criteria->count(); ++i)
+        {
+        if (subClause->currentCriteriaType() == criterion)
+          {
+          (void)condition; // TODO: Set condition here.
+          switch (criterion)
+            { // TODO: Handle other criteria
+          case BLOCK:
+            subClause->Internals->value_block->setText(constraint);
+            return true;
+            break;
+          case PROCESSID:
+            subClause->Internals->value->setText(constraint);
+            return true;
+            break;
+          default:
+            break;
+            }
+          }
+        }
+      }
     }
   return false;
 }

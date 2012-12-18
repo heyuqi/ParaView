@@ -165,7 +165,8 @@ void pqQueryDialog::populateSelectionType()
   // Now fill in values using the previous query selection (if any)
   vtkSMSourceProxy* filter = vtkSMSourceProxy::SafeDownCast(oport->getSource()->getProxy());
   std::string queryString;
-  QString compositeIndex;
+  QString processConstraint;
+  QString blockConstraint;
   if (filter)
     {
     int sprt = 0;
@@ -213,8 +214,13 @@ void pqQueryDialog::populateSelectionType()
                 vtkInformation* selnProp = selnNode->GetProperties();
                 if (selnProp->Has(vtkSelectionNode::COMPOSITE_INDEX()))
                   {
-                  compositeIndex = QString("%1").arg(
+                  blockConstraint = QString("%1").arg(
                     selnProp->Get(vtkSelectionNode::COMPOSITE_INDEX()));
+                  }
+                if (selnProp->Has(vtkSelectionNode::PROCESS_ID()))
+                  {
+                  processConstraint = QString("%1").arg(
+                    selnProp->Get(vtkSelectionNode::PROCESS_ID()));
                   }
                 }
               }
@@ -223,11 +229,16 @@ void pqQueryDialog::populateSelectionType()
         }
       }
     }
-  this->resetClauses(queryString.empty() ? NULL : queryString.c_str(), compositeIndex);
+  this->resetClauses(
+    queryString.empty() ? NULL : queryString.c_str(),
+    blockConstraint, processConstraint);
 }
 
 //-----------------------------------------------------------------------------
-void pqQueryDialog::resetClauses(const char* query, const QString& compositeIndex)
+void pqQueryDialog::resetClauses(
+  const char* query,
+  const QString& blockConstraint,
+  const QString& processConstraint)
 {
   foreach (pqQueryClauseWidget* clause, this->Internals->Clauses)
     {
@@ -236,14 +247,17 @@ void pqQueryDialog::resetClauses(const char* query, const QString& compositeInde
   this->Internals->Clauses.clear();
 
   delete this->Internals->queryClauseFrame->layout();
-  QVBoxLayout *vbox = new QVBoxLayout(this->Internals->queryClauseFrame);
+  QVBoxLayout* vbox = new QVBoxLayout(this->Internals->queryClauseFrame);
   vbox->setMargin(0);
 
-  this->addClause(query, compositeIndex);
+  this->addClause(query, blockConstraint, processConstraint);
 }
 
 //-----------------------------------------------------------------------------
-void pqQueryDialog::addClause(const char* query, const QString& compositeIndex)
+void pqQueryDialog::addClause(
+  const char* query,
+  const QString& blockConstraint,
+  const QString& processConstraint)
 {
   if(this->Internals->source->currentPort() == NULL ||
      this->Internals->source->currentPort()->getSource()->getProxy()->GetObjectsCreated() != 1)
@@ -260,7 +274,7 @@ void pqQueryDialog::addClause(const char* query, const QString& compositeIndex)
     this->Internals->selectionType->currentIndex()).toInt();
   clause->setProducer(this->Internals->source->currentPort());
   clause->setAttributeType(attr_type);
-  clause->initialize(query, compositeIndex);
+  clause->initialize(query, blockConstraint, processConstraint);
   this->Internals->Clauses.push_back(clause);
 
   QVBoxLayout* vbox =

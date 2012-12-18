@@ -123,7 +123,8 @@ public slots:
   void initialize(CriteriaTypes type_flags, bool qualifier_mode=false);
 
   /// initialize the widget using the query string and composite index specified.
-  void initialize(const char* query, const QString& compositeIndex);
+  void initialize(
+    const char* query, const QString& blockConstraint, const QString& processConstraint);
 
 signals:
   /// Fired when the user clicks on the help button.
@@ -164,17 +165,19 @@ protected:
   /// Updates the selection source proxy with the criteria in the clause.
   void addSelectionQualifiers(vtkSMProxy*);
 
-  /// Used by initialize(query,block) to set the UI to the previous search parameters.
+  /// Used by initialize(query,block,process) to set the UI to the previous search parameters.
   virtual bool selectVariable(const QString& variable, int component);
 
-  /// Used by initialize(query,block) to set the UI to the previous search parameters.
+  /// Used by initialize(query,block,process) to set the UI to the previous search parameters.
   virtual bool selectCondition(pqQueryClauseWidget::ConditionMode mode);
 
-  /// Used by initialize(query,block) to set the UI to the previous search parameters.
+  /// Used by initialize(query,block,process) to set the UI to the previous search parameters.
   ///
-  /// Do not call before selectVariable() as the dependent clause subwidget will not
+  /// Do not call before selectVariable() as the dependent clause subwidgets will not
   /// exist and thus this call will have no effect.
-  virtual bool selectCompositeIndex(const QString& compositeIndex);
+  virtual bool setupSubclause(
+    pqQueryClauseWidget::CriteriaTypes criterion,
+    const QString& condition, const QString& constraint);
 
   pqOutputPort* Producer;
   int AttributeType;
